@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pip install:*)",
+      "Bash(python -c ':*)",
+      "Bash(python -m py_compile app/ingestion/ergast_client.py app/ingestion/fastf1_client.py app/ingestion/transformers.py app/ingestion/tasks.py scripts/seed_db.py app/database.py)",
+      "Bash(python -m py_compile app/ingestion/tasks.py)",
+      "Bash(python -m py_compile scripts/seed_db.py)",
+      "Bash(python -c ' *)",
+      "Bash(python -m py_compile app/simulation/scoring.py app/simulation/performance_model.py app/simulation/race_simulator.py app/simulation/season_simulator.py app/analytics/aggregator.py scripts/run_backtest.py)",
+      "Bash(python scripts/run_backtest.py --n 100 --season 2023)",
+      "Bash(docker compose *)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:8000/api/v1/drivers)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:8000/api/v1/circuits)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:8000/docs)",
+      "Bash(curl -sL -o /dev/null -w \"%{http_code}\" http://localhost:8000/api/v1/drivers/)",
+      "Bash(curl -sL -o /dev/null -w \"%{http_code}\" http://localhost:8000/api/v1/circuits/)",
+      "Bash(curl -sL http://localhost:8000/api/v1/drivers/)",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(f'{len\\(d\\)} drivers'\\)\")",
+      "Bash(curl -sL http://localhost:8000/api/v1/circuits/)",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(f'{len\\(d\\)} circuits'\\)\")",
+      "Bash(curl -s -o /dev/null -w \"HTTP %{http_code}\" http://localhost:8000/docs)",
+      "Bash(docker exec f1sim_app *)"
+    ]
+  }
+}

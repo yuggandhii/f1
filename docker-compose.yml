@@ -1,0 +1,117 @@
+version: "3.9"
+
+# ---------------------------------------------------------------------------
+# F1 Monte Carlo Simulator — Docker Compose
+# Usage: docker compose up -d
+# ---------------------------------------------------------------------------
+
+x-app-base: &app-base
+  build:
+    context: .
+    dockerfile: Dockerfile
+  env_file:
+    - .env
+  volumes:
+    - ./data:/app/data
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+  restart: unless-stopped
+
+services:
+  # --------------------------------------------------------------------------
+  # PostgreSQL 16
+  # --------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: f1sim_postgres
+    environment:
+      POSTGRES_USER: f1user
+      POSTGRES_PASSWORD: f1pass
+      POSTGRES_DB: f1sim
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U f1user -d f1sim"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  # --------------------------------------------------------------------------
+  # Redis 7
+  # --------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: f1sim_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  # --------------------------------------------------------------------------
+  # FastAPI application
+  # --------------------------------------------------------------------------
+  app:
+    <<: *app-base
+    container_name: f1sim_app
+    command: >
+      uvicorn app.main:app
+      --host 0.0.0.0
+      --port 8000
+      --reload
+    ports:
+      - "8000:8000"
+
+  # --------------------------------------------------------------------------
+  # Celery worker (simulation + ingestion tasks)
+  # --------------------------------------------------------------------------
+  worker:
+    <<: *app-base
+    container_name: f1sim_worker
+    command: >
+      celery -A app.worker worker
+      --loglevel=info
+      --concurrency=4
+      --queues=simulations,ingestion,default
+
+  # --------------------------------------------------------------------------
+  # Celery beat scheduler (weekly refresh etc.)
+  # --------------------------------------------------------------------------
+  beat:
+    <<: *app-base
+    container_name: f1sim_beat
+    command: >
+      celery -A app.worker beat
+      --loglevel=info
+      --scheduler celery.beat:PersistentScheduler
+
+  # --------------------------------------------------------------------------
+  # Flower — Celery monitoring UI (http://localhost:5555)
+  # --------------------------------------------------------------------------
+  flower:
+    image: mher/flower:2.0
+    container_name: f1sim_flower
+    environment:
+      CELERY_BROKER_URL: redis://redis:6379/0
+      FLOWER_PORT: 5555
+    ports:
+      - "5555:5555"
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:

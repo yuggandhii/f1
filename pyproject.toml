@@ -1,0 +1,89 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "f1-simulator"
+version = "0.1.0"
+description = "F1 Championship Season Monte Carlo Simulator"
+requires-python = ">=3.11"
+dependencies = [
+    # API
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "websockets>=13.0",
+    # Database
+    "sqlalchemy[asyncio]>=2.0.0",
+    "asyncpg>=0.30.0",
+    "alembic>=1.14.0",
+    "psycopg2-binary>=2.9.0",
+    # Settings
+    "pydantic>=2.10.0",
+    "pydantic-settings>=2.7.0",
+    # Task queue
+    "celery[redis]>=5.4.0",
+    "redis>=5.2.0",
+    "flower>=2.0.0",
+    # Data fetching
+    "fastf1>=3.4.0",
+    "httpx>=0.28.0",
+    "requests>=2.32.0",
+    # Simulation / numerics
+    "numpy>=2.2.0",
+    "scipy>=1.14.0",
+    "pandas>=2.2.0",
+    "pyarrow>=18.0.0",
+    # Async utilities
+    "anyio>=4.7.0",
+    "python-multipart>=0.0.12",
+    # Logging / observability
+    "structlog>=24.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
+    "pytest-cov>=6.0.0",
+    "httpx>=0.28.0",
+    "hypothesis>=6.115.0",
+    "ruff>=0.8.0",
+    "mypy>=1.13.0",
+    "types-redis>=4.6.0",
+    "asyncpg-stubs>=0.30.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*", "scripts*"]
+
+# ---------------------------------------------------------------------------
+# Ruff
+# ---------------------------------------------------------------------------
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM"]
+ignore = ["E501"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]
+
+# ---------------------------------------------------------------------------
+# mypy
+# ---------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.11"
+strict = false
+ignore_missing_imports = true
+plugins = ["pydantic.mypy"]
+
+# ---------------------------------------------------------------------------
+# pytest
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = "-x -q --tb=short"
