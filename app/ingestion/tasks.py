@@ -37,8 +37,16 @@ from .ergast_client import (
     fetch_season_qualifying,
     fetch_season_races,
     fetch_season_results,
+    get_completed_rounds,
 )
-from .fastf1_client import fetch_race_weather, fetch_season_laps
+from .fastf1_client import (
+    fetch_race_weather,
+    fetch_season_laps,
+    fetch_season_pitstops,
+    fetch_season_telemetry,
+    try_get_cached_season_laps,
+    try_get_cached_season_weather,
+)
 from .transformers import compute_driver_ratings
 
 _log = logging.getLogger(__name__)
@@ -276,10 +284,16 @@ def fetch_season(self, season: int | str) -> dict:
         return {"status": "no_data", "season": season}
 
     # ── FastF1 data ───────────────────────────────────────────────────────────
-    round_numbers: list[int] = races_df["round"].tolist()
-    laps_by_round = fetch_season_laps(season, round_numbers)
-    weather_by_round: dict[int, str] = {}
-    for rnd in round_numbers:
+    import datetime as _dt
+    _current_year = _dt.date.today().year
+    round_numbers: list[int] = sorted(races_df["round"].tolist())
+    fastf1_rounds = get_completed_rounds(season) if season >= _current_year else round_numbers
+
+    laps_by_round = fetch_season_laps(season, fastf1_rounds)
+    telemetry_by_round = fetch_season_telemetry(season, fastf1_rounds)
+    pitstops_by_round = fetch_season_pitstops(season, fastf1_rounds)
+    weather_by_round: dict[int, str] = {rnd: "dry" for rnd in round_numbers}
+    for rnd in fastf1_rounds:
         try:
             weather_by_round[rnd] = fetch_race_weather(season, rnd)
         except Exception as exc:
@@ -351,21 +365,28 @@ def refresh_driver_ratings(self, season: int) -> dict:
     if results_df.empty:
         return {"status": "no_data", "season": season}
 
-    round_numbers: list[int] = races_df["round"].tolist()
-    laps_by_round = fetch_season_laps(season, round_numbers)
-    weather_by_round: dict[int, str] = {}
-    for rnd in round_numbers:
+    import datetime as _dt
+    _current_year = _dt.date.today().year
+    round_numbers: list[int] = sorted(races_df["round"].tolist())
+    fastf1_rounds = get_completed_rounds(season) if season >= _current_year else round_numbers
+
+    laps_by_round = fetch_season_laps(season, fastf1_rounds)
+    telemetry_by_round = fetch_season_telemetry(season, fastf1_rounds)
+    pitstops_by_round = fetch_season_pitstops(season, fastf1_rounds)
+    weather_by_round: dict[int, str] = {rnd: "dry" for rnd in round_numbers}
+    for rnd in fastf1_rounds:
         weather_by_round[rnd] = fetch_race_weather(season, rnd)
 
-    # Add circuit_ref to results_df for overtake_skill calculation.
+    # Attach circuit_ref for overtake_skill calculation
     round_circuit = races_df[["round", "circuit_ref"]].set_index("round")["circuit_ref"]
     results_df = results_df.copy()
     results_df["circuit_ref"] = results_df["round"].map(round_circuit)
 
-    # ── Load prior seasons for weighted DNF rate ──────────────────────────────
+    # Load prior seasons for weighted DNF rate + multi-season wet_skill
     prior_results: dict[int, "pd.DataFrame"] = {}
+    prior_seasons_data: list = []
     for prior_season in [season - 1, season - 2]:
-        if prior_season < 2018:
+        if prior_season < 2015:
             continue
         try:
             prior_df = fetch_season_results(prior_season)
@@ -373,34 +394,31 @@ def refresh_driver_ratings(self, season: int) -> dict:
                 prior_results[prior_season] = prior_df
         except Exception:
             pass
+        try:
+            cached_laps = try_get_cached_season_laps(prior_season)
+            cached_weather = try_get_cached_season_weather(prior_season)
+            if cached_laps:
+                prior_seasons_data.append((cached_laps, cached_weather))
+        except Exception:
+            pass
 
-    # ── Compute ratings ────────────────────────────────────────────────────────
-    overtake_difficulty = dict(
-        zip(races_df["circuit_ref"], races_df["overtake_difficulty"])
-    )
+    overtake_difficulty = dict(zip(races_df["circuit_ref"], races_df["overtake_difficulty"]))
     ratings = compute_driver_ratings(
         season=season,
         results_df=results_df,
         laps_by_round=laps_by_round,
         weather_by_round=weather_by_round,
+        telemetry_by_round=telemetry_by_round or None,
+        pitstops_by_round=pitstops_by_round or None,
+        prior_seasons_data=prior_seasons_data or None,
         overtake_difficulty=overtake_difficulty,
         prior_results=prior_results if prior_results else None,
     )
 
-    # ── Upsert to DB ──────────────────────────────────────────────────────────
-    # We need the ergast_driver_id → DB UUID mapping.
+    # Upsert to DB
     with _db() as session:
         upserted = 0
         for rating in ratings:
-            driver_db = (
-                session.query(Driver)
-                .filter(Driver.name.isnot(None))
-                .all()
-            )
-            # Find DB driver by matching ergast driverId against driver name/abbr.
-            # We stored the ergast driverId nowhere in the Driver table, so we match
-            # via abbreviation or a normalised name lookup built during fetch_season.
-            # The most reliable approach: re-derive from results_df.
             driver_rows = results_df[results_df["driver_id"] == rating.driver_id]
             if driver_rows.empty:
                 continue
@@ -412,12 +430,10 @@ def refresh_driver_ratings(self, season: int) -> dict:
                 db_driver = session.query(Driver).filter_by(abbreviation=abbr).first()
             if db_driver is None:
                 db_driver = session.query(Driver).filter_by(name=name).first()
-
             if db_driver is None:
                 _log.warning("Driver not found in DB: %s (%s)", name, abbr)
                 continue
 
-            # Upsert driver_rating (update if exists, insert if not).
             existing_rating = (
                 session.query(DriverRatingModel)
                 .filter_by(driver_id=db_driver.id, season=season)
@@ -431,6 +447,8 @@ def refresh_driver_ratings(self, season: int) -> dict:
                 existing_rating.overtake_skill = rating.overtake_skill
                 existing_rating.dnf_rate = rating.dnf_rate
                 existing_rating.qualifying_edge = rating.qualifying_edge
+                existing_rating.speed_rating = rating.speed_rating
+                existing_rating.pit_efficiency = rating.pit_efficiency
             else:
                 session.add(DriverRatingModel(
                     id=uuid.uuid4(),
@@ -443,6 +461,8 @@ def refresh_driver_ratings(self, season: int) -> dict:
                     overtake_skill=rating.overtake_skill,
                     dnf_rate=rating.dnf_rate,
                     qualifying_edge=rating.qualifying_edge,
+                    speed_rating=rating.speed_rating,
+                    pit_efficiency=rating.pit_efficiency,
                 ))
             upserted += 1
 

@@ -22,7 +22,8 @@ _log = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-_BASE_URL = "https://api.jolpi.ca/ergast/f1"
+_ERGAST_BASE = "https://ergast.com/api/f1"      # retired end-2024; kept for <=2024 seasons
+_JOLPICA_BASE = "https://api.jolpi.ca/ergast/f1"  # official Ergast mirror, 2025+
 _PAGE_SIZE = 200        # max items per API request
 _RATE_SLEEP = 0.25      # 4 req/sec budget
 _TIMEOUT = 30           # seconds per request
@@ -157,6 +158,11 @@ _CRASH_KEYWORDS = frozenset([
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+def _base_url(season: int) -> str:
+    """Return the appropriate API base URL for the given season."""
+    return _JOLPICA_BASE if season >= 2025 else _ERGAST_BASE
+
+
 def _cache_dir(season: int) -> Path:
     path = settings.cache_dir / str(season)
     path.mkdir(parents=True, exist_ok=True)
@@ -235,8 +241,8 @@ def fetch_season_races(season: int) -> pd.DataFrame:
         _log.debug("Cache hit: %s", cache)
         return pd.read_parquet(cache)
 
-    _log.info("Fetching races for season %d from Ergast", season)
-    races = _paginate(f"{_BASE_URL}/{season}/races", "RaceTable", "Races")
+    _log.info("Fetching races for season %d from %s", season, _base_url(season))
+    races = _paginate(f"{_base_url(season)}/{season}/races", "RaceTable", "Races")
 
     rows = []
     for race in races:
@@ -277,8 +283,8 @@ def fetch_season_results(season: int) -> pd.DataFrame:
         _log.debug("Cache hit: %s", cache)
         return pd.read_parquet(cache)
 
-    _log.info("Fetching race results for season %d from Ergast", season)
-    races = _paginate(f"{_BASE_URL}/{season}/results", "RaceTable", "Races")
+    _log.info("Fetching race results for season %d from %s", season, _base_url(season))
+    races = _paginate(f"{_base_url(season)}/{season}/results", "RaceTable", "Races")
 
     rows = []
     for race in races:
@@ -312,7 +318,10 @@ def fetch_season_results(season: int) -> pd.DataFrame:
             })
 
     df = pd.DataFrame(rows)
-    df.to_parquet(cache, index=False)
+    if not df.empty:
+        df.to_parquet(cache, index=False)
+    else:
+        _log.warning("No results found for season %d — not caching empty response", season)
     _log.info("Fetched %d results for %d", len(df), season)
     return df
 
@@ -328,8 +337,8 @@ def fetch_season_qualifying(season: int) -> pd.DataFrame:
         _log.debug("Cache hit: %s", cache)
         return pd.read_parquet(cache)
 
-    _log.info("Fetching qualifying for season %d from Ergast", season)
-    races = _paginate(f"{_BASE_URL}/{season}/qualifying", "RaceTable", "Races")
+    _log.info("Fetching qualifying for season %d from %s", season, _base_url(season))
+    races = _paginate(f"{_base_url(season)}/{season}/qualifying", "RaceTable", "Races")
 
     rows = []
     for race in races:
@@ -349,3 +358,39 @@ def fetch_season_qualifying(season: int) -> pd.DataFrame:
     df.to_parquet(cache, index=False)
     _log.info("Fetched %d qualifying rows for %d", len(df), season)
     return df
+
+
+def get_completed_rounds(season: int) -> list[int]:
+    """
+    Return sorted list of round numbers that have completed race results.
+
+    For partial seasons (e.g. 2026) this skips future/unrun rounds.
+    Reads from the ergast_results parquet cache if available — no extra
+    network call if results were already fetched.
+    """
+    cache = _cache_dir(season) / "ergast_results.parquet"
+    if cache.exists():
+        try:
+            df = pd.read_parquet(cache)
+            if not df.empty and "round" in df.columns:
+                rounds = sorted(int(r) for r in df["round"].unique())
+                _log.debug(
+                    "get_completed_rounds(%d): %d rounds from cache %s",
+                    season, len(rounds), rounds,
+                )
+                return rounds
+        except Exception as exc:
+            _log.warning("Could not read results cache for %d: %s", season, exc)
+
+    # Cache miss or empty cache — fetch fresh (also re-populates the cache).
+    try:
+        df = fetch_season_results(season)
+        rounds = sorted(int(r) for r in df["round"].unique()) if not df.empty else []
+        _log.info(
+            "get_completed_rounds(%d): %d completed rounds: %s",
+            season, len(rounds), rounds,
+        )
+        return rounds
+    except Exception as exc:
+        _log.warning("get_completed_rounds failed for %d: %s", season, exc)
+        return []

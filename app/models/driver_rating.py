@@ -37,6 +37,8 @@ class DriverRating(Base):
     # Lower is better (historical DNF fraction)
     dnf_rate: Mapped[float | None] = mapped_column(Float, nullable=True)
     qualifying_edge: Mapped[float | None] = mapped_column(Float, nullable=True)
+    speed_rating: Mapped[float | None] = mapped_column(Float, nullable=True)
+    pit_efficiency: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
