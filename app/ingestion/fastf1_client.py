@@ -133,6 +133,12 @@ def fetch_race_laps(season: int, round_number: int) -> pd.DataFrame:
         frame_dict["position"] = pd.Series(np.nan, index=laps.index)
 
     rows = pd.DataFrame(frame_dict)
+    if rows.empty:
+        _log.warning(
+            "FastF1 returned 0 laps for %d/%d — skipping cache write so next run retries",
+            season, round_number,
+        )
+        return rows
     rows.to_parquet(cache, index=False)
     _log.info("Fetched %d laps for %d/%d", len(rows), season, round_number)
     return rows

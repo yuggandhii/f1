@@ -20,7 +20,8 @@
       "Bash(curl -sL http://localhost:8000/api/v1/circuits/)",
       "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(f'{len\\(d\\)} circuits'\\)\")",
       "Bash(curl -s -o /dev/null -w \"HTTP %{http_code}\" http://localhost:8000/docs)",
-      "Bash(docker exec f1sim_app *)"
+      "Bash(docker exec f1sim_app *)",
+      "Bash(docker exec f1sim_postgres *)"
     ]
   }
 }
