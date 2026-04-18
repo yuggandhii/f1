@@ -81,6 +81,32 @@ def _run_batch(
 # Public API
 # ---------------------------------------------------------------------------
 
+def _apply_starting_points(
+    all_points: np.ndarray,
+    driver_order: list[str],
+    starting_points: dict[str, float],
+) -> np.ndarray:
+    """
+    Add a per-driver points offset to every simulation row.
+
+    Matches driver_order entries against starting_points keys using
+    slug normalisation and suffix matching so that "max_verstappen"
+    matches standings key "verstappen".
+    """
+    for i, did in enumerate(driver_order):
+        slug = did.lower().replace(" ", "_")
+        offset = starting_points.get(did) or starting_points.get(slug) or 0.0
+        if not offset:
+            # suffix match: "max_verstappen" → "verstappen"
+            for key, pts in starting_points.items():
+                if slug.endswith(key.lower()) or slug.startswith(key.lower()):
+                    offset = pts
+                    break
+        if offset:
+            all_points[:, i] += float(offset)
+    return all_points
+
+
 def simulate_season(
     ratings: list[DriverRating],
     circuits: list[CircuitInfo],
@@ -90,6 +116,7 @@ def simulate_season(
     weather_mode: str = "historical",
     seed: int | None = None,
     n_workers: int = 1,
+    starting_points: dict[str, float] | None = None,
 ) -> tuple[np.ndarray, list[str]]:
     """
     Run a full Monte Carlo season simulation.
@@ -126,6 +153,8 @@ def simulate_season(
                 all_points += sprint_pts
             prev_dnf_mask = dnf_mask
             _log.debug("Simulated round %d/%d: %s", i + 1, len(circuits), circuit.name)
+        if starting_points:
+            all_points = _apply_starting_points(all_points, driver_order, starting_points)
         return all_points, driver_order
 
     # Multi-process path — split sims into batches.
@@ -153,6 +182,8 @@ def simulate_season(
             results[idx] = fut.result()
 
     all_points = np.concatenate(results, axis=0)
+    if starting_points:
+        all_points = _apply_starting_points(all_points, driver_order, starting_points)
     return all_points, driver_order
 
 
@@ -199,5 +230,6 @@ def circuits_from_dataframe(
             safety_car_prob=float(sc_prob),
             track_type=str(track_type),
             predicted_weather=predicted_weather,
+            round=int(getattr(row, "round", 0)),
         ))
     return circuits

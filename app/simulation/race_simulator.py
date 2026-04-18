@@ -45,6 +45,7 @@ class CircuitInfo:
     safety_car_prob: float = 0.3  # Per-race safety car probability
     track_type: str = "permanent"  # 'street' | 'permanent' | 'mixed'
     predicted_weather: str | None = None  # Override from weather forecast table
+    round: int = 0             # Season round number (1-indexed); 0 = unknown
 
 
 # ---------------------------------------------------------------------------

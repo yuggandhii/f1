@@ -92,12 +92,77 @@ def run_season_simulation(self, run_id: str) -> dict:
         _publish(0.0, f"failed: {exc}")
         return {"status": "failed", "error": str(exc)}
 
-    # ── Apply what-if modifications ───────────────────────────────────────
-    mods = scenario.get("modifications", [])
-    if mods:
+    # ── Apply what-if scenario or legacy modifications ────────────────────
+    starting_points: dict[str, float] | None = None
+
+    # Build team context maps for scenario engine
+    # driver_teams: driver_slug → team_constructor_slug (e.g. "charles_leclerc" → "ferrari")
+    # team_car_perf: team_constructor_slug → car_performance (e.g. "ferrari" → 0.88)
+    driver_teams: dict[str, str] = {}
+    team_car_perf: dict[str, float] = {}
+    try:
+        from app.database import SyncSessionLocal
+        from app.models.driver import Driver
+        from app.models.team import Team
+        import unicodedata as _uni
+        def _slug(s: str) -> str:
+            nfkd = _uni.normalize("NFKD", s)
+            return nfkd.encode("ascii", "ignore").decode("ascii").lower().replace(" ", "_")
+
+        with SyncSessionLocal() as _s:
+            # Build team_uuid → constructor_slug map
+            team_uuid_to_slug: dict[str, str] = {}
+            for t in _s.query(Team).all():
+                team_slug = _slug(t.constructor_name or t.name or "")
+                if team_slug:
+                    team_uuid_to_slug[str(t.id)] = team_slug
+
+            # driver_slug → team_constructor_slug
+            for d in _s.query(Driver).all():
+                if d.team_id:
+                    team_slug = team_uuid_to_slug.get(str(d.team_id), "")
+                    if team_slug:
+                        driver_teams[_slug(d.name)] = team_slug
+
+            # team_constructor_slug → car_performance (season-specific)
+            for t in _s.query(Team).filter(
+                Team.car_performance_season == season,
+                Team.car_performance.isnot(None),
+            ).all():
+                team_slug = _slug(t.constructor_name or t.name or "")
+                if team_slug:
+                    team_car_perf[team_slug] = t.car_performance
+    except Exception as _exc:
+        _log.warning("Could not load team context for scenario: %s", _exc)
+
+    if scenario.get("scenario"):
+        # Nested format from POST /scenarios/what-if: outer wrapper has "scenario" key
+        inner = scenario["scenario"]
+        from app.analytics.what_if import apply_scenario
+        sim_ratings, circuits, starting_points, desc = apply_scenario(
+            sim_ratings, circuits, inner,
+            driver_teams=driver_teams,
+            team_car_perf=team_car_perf,
+        )
+        _log.info("Applied scenario: %s", desc)
+    elif scenario.get("type"):
+        # Direct scenario dict (type key at top level, no nesting)
+        from app.analytics.what_if import apply_scenario
+        sim_ratings, circuits, starting_points, desc = apply_scenario(
+            sim_ratings, circuits, scenario,
+            driver_teams=driver_teams,
+            team_car_perf=team_car_perf,
+        )
+        _log.info("Applied scenario: %s", desc)
+    elif scenario.get("modifications"):
+        # Legacy list format
         from app.analytics.what_if import apply_modifications
-        sim_ratings, circuits, summary = apply_modifications(sim_ratings, circuits, mods)
-        _log.info("Applied scenario mods: %s", summary)
+        sim_ratings, circuits, summary = apply_modifications(
+            sim_ratings, circuits, scenario["modifications"],
+            driver_teams=driver_teams,
+            team_car_perf=team_car_perf,
+        )
+        _log.info("Applied legacy mods: %s", summary)
 
     _publish(0.10, f"simulating {n_sims:,} seasons — {len(sim_ratings)} drivers, {len(circuits)} circuits")
 
@@ -110,6 +175,7 @@ def run_season_simulation(self, run_id: str) -> dict:
             n_sims=n_sims,
             randomness=randomness,
             seed=42,
+            starting_points=starting_points,
         )
     except Exception as exc:
         _fail_run(run_id, str(exc))
@@ -158,14 +224,21 @@ def run_season_simulation(self, run_id: str) -> dict:
             run.completed_at = datetime.now(timezone.utc)
             run.result_path = result_path
 
+        import unicodedata
+        def _ascii_slug(s: str) -> str:
+            """Normalize accented chars to ASCII and snake_case."""
+            nfkd = unicodedata.normalize("NFKD", s)
+            ascii_str = nfkd.encode("ascii", "ignore").decode("ascii")
+            return ascii_str.lower().replace(" ", "_")
+
         from app.models.driver import Driver
         driver_rows = session.query(Driver).all()
-        # Build lookup: ergast-style snake_case id → DB UUID
+        # Build lookup: ergast-style snake_case id → DB UUID (accent-normalized)
         name_to_uuid: dict[str, uuid.UUID] = {}
         for d in driver_rows:
-            snake = d.name.lower().replace(" ", "_")
-            name_to_uuid[snake] = d.id
             name_to_uuid[d.name] = d.id
+            name_to_uuid[d.name.lower().replace(" ", "_")] = d.id
+            name_to_uuid[_ascii_slug(d.name)] = d.id
 
         for _, row in summary_df.iterrows():
             driver_db_id = name_to_uuid.get(row["driver_id"])
