@@ -21,7 +21,30 @@
       "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(f'{len\\(d\\)} circuits'\\)\")",
       "Bash(curl -s -o /dev/null -w \"HTTP %{http_code}\" http://localhost:8000/docs)",
       "Bash(docker exec f1sim_app *)",
-      "Bash(docker exec f1sim_postgres *)"
+      "Bash(docker exec f1sim_postgres *)",
+      "Bash(docker cp *)",
+      "Bash(pip show *)",
+      "Bash(DATABASE_URL=postgresql+asyncpg://f1user:f1pass@localhost:5432/f1sim alembic history)",
+      "Bash(DATABASE_URL=postgresql+asyncpg://f1user:f1pass@localhost:5432/f1sim alembic upgrade head)",
+      "Bash(python -c \"import psycopg2; conn = psycopg2.connect\\(host='localhost', port=5432, user='f1user', password='f1pass', dbname='f1sim'\\); print\\('Connected!'\\); conn.close\\(\\)\")",
+      "Bash(tasklist)",
+      "Bash(docker context *)",
+      "Bash(docker info *)",
+      "Bash(docker version *)",
+      "Bash(powershell -Command \"& 'C:\\\\Program Files\\\\Docker\\\\Docker\\\\DockerCli.exe' -SwitchLinuxEngine\")",
+      "Bash(powershell *)",
+      "Bash(wsl -l -v)",
+      "Bash(wsl -d docker-desktop -- sh -c \"docker ps 2>&1\")",
+      "Bash(wsl -d docker-desktop -- sh -c \"ps aux | grep postgres\")",
+      "Bash(wsl -d docker-desktop -- sh -c \"cat /proc/net/tcp6 2>/dev/null | head -20\")",
+      "Bash(python *)",
+      "Bash(DATABASE_URL=\"postgresql+asyncpg://f1user:f1pass@localhost:5432/f1sim\" python *)",
+      "Bash(grep -v \"^$\")",
+      "Bash(grep -v \"^[[:space:]]*$\")",
+      "Bash(PGPASSWORD=f1pass python -c \"import psycopg2; conn = psycopg2.connect\\(host='127.0.0.1', port=5432, dbname='f1sim', user='f1user', password='f1pass'\\); print\\('Connected OK'\\); conn.close\\(\\)\")",
+      "Bash(netstat -ano)",
+      "Bash(wait)",
+      "Bash(docker -H npipe:////./pipe/docker_engine ps)"
     ]
   }
 }

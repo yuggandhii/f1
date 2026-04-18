@@ -34,11 +34,16 @@ class DriverRating(Base):
     wet_skill: Mapped[float | None] = mapped_column(Float, nullable=True)
     tyre_management: Mapped[float | None] = mapped_column(Float, nullable=True)
     overtake_skill: Mapped[float | None] = mapped_column(Float, nullable=True)
-    # Lower is better (historical DNF fraction)
+    # Lower is better (historical DNF fraction — sum of mech + driver, back-compat)
     dnf_rate: Mapped[float | None] = mapped_column(Float, nullable=True)
     qualifying_edge: Mapped[float | None] = mapped_column(Float, nullable=True)
     speed_rating: Mapped[float | None] = mapped_column(Float, nullable=True)
     pit_efficiency: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Teammate comparison index: positive = faster than teammate, range [-1, +1]
+    teammate_index: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Split DNF rates: mechanical = team-averaged car failures; driver = individual errors
+    mechanical_dnf_rate: Mapped[float | None] = mapped_column(Float, nullable=True)
+    driver_dnf_rate: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

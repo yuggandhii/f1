@@ -196,6 +196,7 @@ def _load_ratings(season: int):
     from app.database import SyncSessionLocal
     from app.models.driver import Driver
     from app.models.driver_rating import DriverRating as DriverRatingModel
+    from app.models.team import Team
     from app.simulation.performance_model import DriverRating
 
     try:
@@ -207,6 +208,15 @@ def _load_ratings(season: int):
                 .all()
             )
             if rows:
+                # Load car_performance per team for this season
+                teams = session.query(Team).filter(
+                    Team.car_performance_season == season,
+                    Team.car_performance.isnot(None),
+                ).all()
+                team_car_perf: dict[str, float] = {
+                    t.id: t.car_performance for t in teams
+                }
+
                 _log.info("Loaded %d driver ratings from DB (season %d)", len(rows), season)
                 return [
                     DriverRating(
@@ -218,6 +228,9 @@ def _load_ratings(season: int):
                         overtake_skill=r.overtake_skill or 0.5,
                         dnf_rate=r.dnf_rate or 0.05,
                         qualifying_edge=r.qualifying_edge or 0.5,
+                        car_performance=team_car_perf.get(d.team_id, 0.5),
+                        mechanical_dnf_rate=r.mechanical_dnf_rate or 0.0,
+                        driver_dnf_rate=r.driver_dnf_rate or 0.0,
                     )
                     for r, d in rows
                 ]
@@ -256,6 +269,8 @@ def _load_ratings(season: int):
             overtake_skill=r.overtake_skill,
             dnf_rate=r.dnf_rate,
             qualifying_edge=r.qualifying_edge,
+            mechanical_dnf_rate=r.mechanical_dnf_rate,
+            driver_dnf_rate=r.driver_dnf_rate,
         )
         for r in transformer_ratings
     ]

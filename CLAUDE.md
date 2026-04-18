@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Python FastAPI backend that runs 10,000 Monte Carlo F1 season simulations and exposes REST + WebSocket endpoints. Stack: **FastAPI · Celery · Redis · PostgreSQL · SQLAlchemy 2.0 · NumPy · Parquet**.
 
-Full spec in `PRD.md`. Current phase: `CURRENT_PHASE: 4 — API Layer` (update when a phase completes; checklist in PRD §9).
+Full spec in `PRD.md`. Current phase: `CURRENT_PHASE: Phase 5 — What-If Scenarios (pending)` (update when a phase completes; checklist in PRD §9).
 
 ---
 

@@ -42,10 +42,12 @@ class DriverRating:
     wet_skill: float        # 0-1 (higher = better in wet)
     tyre_management: float  # 0-1 (higher = longer relative stints)
     overtake_skill: float   # 0-1 (higher = better at gaining positions)
-    dnf_rate: float         # 0-1 (lower is better — historical DNF fraction)
+    dnf_rate: float         # 0-1 (lower is better — mech + driver sum, backwards compat)
     qualifying_edge: float  # 0-1 (higher = better qualifier)
-    speed_rating: float = field(default=0.5)   # 0-1 (higher = higher top speed)
-    pit_efficiency: float = field(default=0.5) # 0-1 (higher = faster relative to team)
+    speed_rating: float = field(default=0.5)        # 0-1 (higher = higher top speed)
+    pit_efficiency: float = field(default=0.5)      # 0-1 (higher = faster relative to team)
+    mechanical_dnf_rate: float = field(default=0.0) # car-failure DNFs, team-averaged
+    driver_dnf_rate: float = field(default=0.0)     # crash/error DNFs, individual
 
 
 # ---------------------------------------------------------------------------
@@ -163,6 +165,48 @@ def _compute_consistency(laps_by_round: dict[int, pd.DataFrame]) -> Optional[pd.
     return _min_max_normalise(raw)
 
 
+def _compute_wet_skill_from_inter(
+    laps_by_round: dict[int, pd.DataFrame],
+) -> Optional[pd.Series]:
+    """
+    Fallback wet skill proxy using INTERMEDIATE compound laps.
+
+    Computes each driver's median INTER lap time vs their median dry lap time.
+    Drivers who go relatively fast on INTERs (ratio close to dry pace) score higher.
+    Used when fewer than 2 wet/mixed weather rounds are available.
+    """
+    dry_frames: list[pd.DataFrame] = []
+    inter_frames: list[pd.DataFrame] = []
+
+    for laps in laps_by_round.values():
+        if laps.empty or "compound" not in laps.columns:
+            continue
+        acc = laps[laps["is_accurate"] & laps["lap_time_s"].notna()].copy()
+        if acc.empty:
+            continue
+        compound = acc["compound"].str.upper()
+        inter_laps = acc[compound == "INTER"]
+        dry_laps = acc[compound.isin(["SOFT", "MEDIUM", "HARD"])]
+        if not inter_laps.empty:
+            inter_frames.append(inter_laps[["driver_id", "lap_time_s"]])
+        if not dry_laps.empty:
+            dry_frames.append(dry_laps[["driver_id", "lap_time_s"]])
+
+    if not inter_frames or not dry_frames:
+        return None
+
+    inter_median = pd.concat(inter_frames).groupby("driver_id")["lap_time_s"].median()
+    dry_median = pd.concat(dry_frames).groupby("driver_id")["lap_time_s"].median()
+
+    common = inter_median.index.intersection(dry_median.index)
+    if len(common) < 3:
+        return None
+
+    # Ratio = dry_pace / inter_pace: closer to 1.0 → driver adapts well to INTER
+    ratio = dry_median.loc[common] / inter_median.loc[common]
+    return _min_max_normalise(ratio)
+
+
 def _compute_wet_skill(
     results_df: pd.DataFrame,
     laps_by_round: dict[int, pd.DataFrame],
@@ -173,6 +217,8 @@ def _compute_wet_skill(
     Wet skill = relative pace in wet vs dry conditions.
     Uses multi-season data when prior_seasons_data is supplied, fixing the
     0.5 fallback problem for seasons with few wet races.
+    When wet rounds < 2 across all available data, falls back to INTER compound
+    lap proxy so no driver defaults to the neutral 0.5.
     """
     if not laps_by_round and not prior_seasons_data:
         return None
@@ -194,9 +240,10 @@ def _compute_wet_skill(
 
     if len(wet_rounds) < 2:
         _log.debug(
-            "Too few wet rounds (%d) across all data to compute wet_skill", len(wet_rounds)
+            "Too few wet rounds (%d) — using INTER compound laps as wet_skill proxy",
+            len(wet_rounds),
         )
-        return None
+        return _compute_wet_skill_from_inter(all_laps)
 
     def _median_by_driver(rounds: set[int]) -> pd.Series:
         f = []
@@ -216,7 +263,8 @@ def _compute_wet_skill(
 
     common = wet_pace.index.intersection(dry_pace.index)
     if len(common) < 3:
-        return None
+        # Fall back to INTER proxy rather than returning None
+        return _compute_wet_skill_from_inter(all_laps)
 
     # Higher ratio = driver goes faster (relatively) in wet than dry
     ratio = dry_pace.loc[common] / wet_pace.loc[common]
@@ -315,32 +363,88 @@ def _compute_overtake_skill(
     return _min_max_normalise(per_driver)
 
 
-def _compute_dnf_rate(
+def _compute_dnf_rates(
     results_df: pd.DataFrame,
     prior_results: dict[int, pd.DataFrame] | None = None,
-) -> pd.Series:
-    """dnf_rate = weighted DNF fraction (current 0.5, t-1 0.3, t-2 0.2)."""
+) -> tuple[pd.Series, pd.Series, pd.Series]:
+    """
+    Compute split DNF rates weighted across current + prior seasons.
+
+    Returns (total, mechanical_pooled, driver_error) as pd.Series per driver.
+
+    mechanical_pooled: car-failure DNFs averaged within the *current* season's
+        constructor — Ferrari 2022's engine failures are shared equally between
+        Leclerc and Sainz rather than accruing to Leclerc's personal rating.
+    driver_error: crash / incident DNFs, kept individual.
+    total: mechanical_pooled + driver_error (stored as dnf_rate for back-compat).
+    """
     all_frames: list[tuple[pd.DataFrame, float]] = [(results_df, 0.5)]
     if prior_results:
         for s, w in zip(sorted(prior_results.keys(), reverse=True)[:2], [0.3, 0.2]):
             all_frames.append((prior_results[s], w))
 
-    weighted_dnf: dict[str, float] = {}
+    weighted_mech:  dict[str, float] = {}
+    weighted_drv:   dict[str, float] = {}
     weighted_races: dict[str, float] = {}
 
     for df, weight in all_frames:
         started = df.groupby("driver_id").size()
-        dnfs = df[df["dnf"]].groupby("driver_id").size()
+        if "dnf_cause" in df.columns:
+            mech_dnfs  = (
+                df[df["dnf"] & (df["dnf_cause"] == "mechanical")]
+                .groupby("driver_id").size()
+            )
+            crash_dnfs = (
+                df[df["dnf"] & (df["dnf_cause"].isin(["crash", "other"]))]
+                .groupby("driver_id").size()
+            )
+        else:
+            # No cause data — split 70 % mechanical / 30 % driver (F1 historical avg)
+            total_dnfs = df[df["dnf"]].groupby("driver_id").size()
+            mech_dnfs  = (total_dnfs * 0.7).round().astype(int)
+            crash_dnfs = total_dnfs - mech_dnfs
+
         for driver in started.index:
-            weighted_dnf[driver] = weighted_dnf.get(driver, 0) + weight * dnfs.get(driver, 0)
+            weighted_mech[driver]  = weighted_mech.get(driver, 0)  + weight * mech_dnfs.get(driver, 0)
+            weighted_drv[driver]   = weighted_drv.get(driver, 0)   + weight * crash_dnfs.get(driver, 0)
             weighted_races[driver] = weighted_races.get(driver, 0) + weight * started[driver]
 
     drivers = list(weighted_races)
-    rates = pd.Series(
-        {d: weighted_dnf.get(d, 0) / weighted_races[d] for d in drivers},
+    mech_rates = pd.Series(
+        {d: weighted_mech.get(d, 0) / weighted_races[d] for d in drivers},
         dtype=float,
+    ).clip(0.0, 1.0)
+    drv_rates = pd.Series(
+        {d: weighted_drv.get(d, 0) / weighted_races[d] for d in drivers},
+        dtype=float,
+    ).clip(0.0, 1.0)
+
+    # Pool mechanical DNF rates within each team using the *current* season's
+    # constructor mapping.  Car reliability is a factory issue — teammates share it.
+    driver_team = (
+        results_df[["driver_id", "constructor_id"]]
+        .drop_duplicates("driver_id")
+        .set_index("driver_id")["constructor_id"]
     )
-    return rates.clip(0.0, 1.0)
+    mech_df = mech_rates.rename("mech_rate").to_frame()
+    mech_df["team"] = mech_df.index.map(driver_team)
+    has_team = mech_df["team"].notna()
+    if has_team.any():
+        team_avg = mech_df.loc[has_team].groupby("team")["mech_rate"].transform("mean")
+        mech_df.loc[has_team, "mech_rate"] = team_avg
+    mech_pooled = mech_df["mech_rate"].clip(0.0, 1.0)
+
+    total = (mech_pooled + drv_rates).clip(0.0, 1.0)
+    return total, mech_pooled, drv_rates
+
+
+def _compute_dnf_rate(
+    results_df: pd.DataFrame,
+    prior_results: dict[int, pd.DataFrame] | None = None,
+) -> pd.Series:
+    """Legacy wrapper — returns total dnf_rate for callers that only need the sum."""
+    total, _, _ = _compute_dnf_rates(results_df, prior_results)
+    return total
 
 
 def _compute_qualifying_edge(
@@ -512,16 +616,16 @@ def compute_driver_ratings(
     wet_skill    = _compute_wet_skill(results_df, laps_by_round, weather_by_round, prior_seasons_data)
     tyre_mgmt    = _compute_tyre_management(laps_by_round)
     overtake     = _compute_overtake_skill(results_df, overtake_difficulty, laps_by_round)
-    dnf_rate     = _compute_dnf_rate(results_df, prior_results)
+    dnf_total, dnf_mech, dnf_drv = _compute_dnf_rates(results_df, prior_results)
     qual_edge    = _compute_qualifying_edge(results_df, telemetry_by_round)
     speed_rating = _compute_speed_rating(telemetry_by_round) if telemetry_by_round else None
     pit_eff      = _compute_pit_efficiency(pitstops_by_round, results_df) if pitstops_by_round else None
 
-    def _get(series: pd.Series | None, driver: str) -> float:
+    def _get(series: pd.Series | None, driver: str, default: float = 0.5) -> float:
         if series is None or driver not in series.index:
-            return 0.5
+            return default
         val = series[driver]
-        return float(val) if not pd.isna(val) else 0.5
+        return float(val) if not pd.isna(val) else default
 
     ratings: list[DriverRating] = []
     for driver in drivers:
@@ -533,10 +637,12 @@ def compute_driver_ratings(
             wet_skill=_get(wet_skill, driver),
             tyre_management=_get(tyre_mgmt, driver),
             overtake_skill=_get(overtake, driver),
-            dnf_rate=_get(dnf_rate, driver),
+            dnf_rate=_get(dnf_total, driver, default=0.0),
             qualifying_edge=_get(qual_edge, driver),
             speed_rating=_get(speed_rating, driver),
             pit_efficiency=_get(pit_eff, driver),
+            mechanical_dnf_rate=_get(dnf_mech, driver, default=0.0),
+            driver_dnf_rate=_get(dnf_drv, driver, default=0.0),
         ))
 
     _log.info("Computed %d driver ratings for season %d", len(ratings), season)

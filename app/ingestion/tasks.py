@@ -468,3 +468,76 @@ def refresh_driver_ratings(self, season: int) -> dict:
 
     _log.info("refresh_driver_ratings done: season=%d upserted=%d", season, upserted)
     return {"status": "done", "season": season, "ratings_upserted": upserted}
+
+
+@celery_app.task(name="f1sim.ingestion.fetch_weather_forecasts", bind=True)
+def fetch_weather_forecasts(self) -> dict:
+    """
+    Fetch OpenMeteo weather forecasts for all circuits with an upcoming race
+    within the next 10 days.
+
+    Runs every Thursday (configured in worker.py beat_schedule).
+    Stores results in race_weather_forecasts table.
+    """
+    import datetime as _dt
+
+    from app.ingestion.weather_client import upsert_weather_forecast
+    from app.ingestion.ergast_client import fetch_season_races
+
+    today = _dt.date.today()
+    horizon = today + _dt.timedelta(days=10)
+    season = today.year
+
+    _log.info("fetch_weather_forecasts: checking upcoming races for %s → %s", today, horizon)
+
+    try:
+        races_df = fetch_season_races(season)
+    except Exception as exc:
+        _log.warning("Could not fetch race calendar: %s", exc)
+        return {"status": "failed", "error": str(exc)}
+
+    if races_df.empty:
+        return {"status": "no_races"}
+
+    saved = 0
+    with _db() as session:
+        from app.models.circuit import Circuit as CircuitModel
+
+        # Determine circuits with races in the next 10 days
+        for row in races_df.itertuples(index=False):
+            race_date_raw = getattr(row, "race_date", None)
+            if race_date_raw is None:
+                continue
+            try:
+                if isinstance(race_date_raw, str):
+                    race_date = _dt.date.fromisoformat(race_date_raw)
+                else:
+                    race_date = race_date_raw
+            except (TypeError, ValueError):
+                continue
+
+            if not (today <= race_date <= horizon):
+                continue
+
+            circuit_ref = row.circuit_ref
+            db_circuit = (
+                session.query(CircuitModel)
+                .filter_by(name=getattr(row, "circuit_name", circuit_ref))
+                .first()
+            )
+            if db_circuit is None or db_circuit.latitude is None or db_circuit.longitude is None:
+                _log.debug("No coordinates for circuit %s — skipping weather fetch", circuit_ref)
+                continue
+
+            ok = upsert_weather_forecast(
+                session,
+                circuit_id=db_circuit.id,
+                race_date=race_date,
+                latitude=db_circuit.latitude,
+                longitude=db_circuit.longitude,
+            )
+            if ok:
+                saved += 1
+
+    _log.info("fetch_weather_forecasts done: %d forecasts saved", saved)
+    return {"status": "done", "forecasts_saved": saved}

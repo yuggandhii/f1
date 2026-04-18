@@ -26,6 +26,15 @@ class Circuit(Base):
     overtake_difficulty: Mapped[float | None] = mapped_column(Float, nullable=True)
     # 0.0–1.0 (1.0 = highly variable weather)
     weather_variability: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # Geographic coordinates for weather API lookups
+    latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # Safety car / VSC probability from historical FastF1 track_status data
+    sc_probability: Mapped[float | None] = mapped_column(Float, nullable=True, default=0.3)
+    vsc_probability: Mapped[float | None] = mapped_column(Float, nullable=True, default=0.15)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -33,6 +42,9 @@ class Circuit(Base):
     # Relationships
     race_results: Mapped[list["RaceResult"]] = relationship(  # noqa: F821
         "RaceResult", back_populates="circuit", lazy="select"
+    )
+    weather_forecasts: Mapped[list["RaceWeatherForecast"]] = relationship(  # noqa: F821
+        "RaceWeatherForecast", back_populates="circuit", lazy="select"
     )
 
     def __repr__(self) -> str:

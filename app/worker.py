@@ -43,12 +43,16 @@ celery_app.conf.update(
         "f1sim.ingestion.*": {"queue": "ingestion"},
         "f1sim.simulation.*": {"queue": "simulations"},
     },
-    # Beat schedule — weekly Monday 04:00 UTC refresh
+    # Beat schedule — weekly Monday 04:00 UTC refresh + Thursday weather forecast
     beat_schedule={
         "weekly-ingestion-refresh": {
             "task": "f1sim.ingestion.fetch_season",
             "schedule": crontab(hour=4, minute=0, day_of_week=1),
             "kwargs": {"season": "current"},
+        },
+        "thursday-weather-forecasts": {
+            "task": "f1sim.ingestion.fetch_weather_forecasts",
+            "schedule": crontab(hour=6, minute=0, day_of_week=4),  # Thursday 06:00 UTC
         },
     },
 )
