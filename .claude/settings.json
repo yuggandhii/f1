@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(docker logs *)",
+      "Bash(curl -s http://localhost:8000/*)"
+    ]
+  }
+}

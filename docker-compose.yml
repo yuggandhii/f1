@@ -13,6 +13,7 @@ x-app-base: &app-base
     - .env
   volumes:
     - ./data:/app/data
+    - ./app:/app/app
   depends_on:
     postgres:
       condition: service_healthy

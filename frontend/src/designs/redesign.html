@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>F1 Sim — Simulate & Game redesign</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&family=Instrument+Serif:ital@0;1&family=Geist+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  body { margin: 0; }
+  /* Pit Wall (A) */
+  .pw-frame { font-family: 'Inter', sans-serif; background: #0b0c0e; color: #e7e5e0; }
+  .pw-mono { font-family: 'JetBrains Mono', monospace; font-variant-numeric: tabular-nums; }
+  /* Vector (B) */
+  .vc-frame { font-family: 'Inter', sans-serif; background: #f4f2ec; color: #0e0e10; }
+  .vc-serif { font-family: 'Instrument Serif', serif; }
+  .vc-mono { font-family: 'Geist Mono', monospace; font-variant-numeric: tabular-nums; }
+
+  @keyframes pw-pulse { 0%,100% { opacity: 1 } 50% { opacity: .35 } }
+  @keyframes pw-scan {
+    0% { transform: translateY(0%) }
+    100% { transform: translateY(100%) }
+  }
+  @keyframes bar-rise { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+  @keyframes marquee { from { transform: translateX(0) } to { transform: translateX(-50%) } }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script type="text/babel" src="design-canvas.jsx"></script>
+<script type="text/babel" src="data.jsx"></script>
+<script type="text/babel" src="pitwall-simulate.jsx"></script>
+<script type="text/babel" src="pitwall-game.jsx"></script>
+<script type="text/babel" src="vector-simulate.jsx"></script>
+<script type="text/babel" src="vector-game.jsx"></script>
+
+<script type="text/babel">
+function App() {
+  return (
+    <DesignCanvas>
+      <DCSection
+        title="Direction A — Pit Wall"
+        subtitle="Dark telemetry. Hazard amber accent (oklch 0.78 0.17 70). JetBrains Mono for numbers. Dense, engineer-focused.">
+        <DCArtboard label="Simulate · dark" width={1280} height={840}>
+          <PitWallSimulate theme="dark" />
+        </DCArtboard>
+        <DCArtboard label="Simulate · light" width={1280} height={840}>
+          <PitWallSimulate theme="light" />
+        </DCArtboard>
+        <DCArtboard label="Game · dark" width={1280} height={840}>
+          <PitWallGame theme="dark" />
+        </DCArtboard>
+        <DCArtboard label="Game · light" width={1280} height={840}>
+          <PitWallGame theme="light" />
+        </DCArtboard>
+        <DCPostIt top={-12} left={420} rotate={-3} width={220}>
+          Telemetry-first. Imagine you're reading a pit-wall monitor during a session — every number earns its place.
+        </DCPostIt>
+      </DCSection>
+
+      <DCSection
+        title="Direction B — Vector"
+        subtitle="Editorial analytics. Cyan accent (oklch 0.72 0.15 215). Instrument Serif display + Geist Mono. Whitespace, chart-first.">
+        <DCArtboard label="Simulate · light" width={1280} height={840}>
+          <VectorSimulate theme="light" />
+        </DCArtboard>
+        <DCArtboard label="Simulate · dark" width={1280} height={840}>
+          <VectorSimulate theme="dark" />
+        </DCArtboard>
+        <DCArtboard label="Game · light" width={1280} height={840}>
+          <VectorGame theme="light" />
+        </DCArtboard>
+        <DCArtboard label="Game · dark" width={1280} height={840}>
+          <VectorGame theme="dark" />
+        </DCArtboard>
+        <DCPostIt top={-12} left={420} rotate={2} width={220}>
+          Feels like a racing analytics publication. Big serif numerals, airy grid, data is the decoration.
+        </DCPostIt>
+      </DCSection>
+    </DesignCanvas>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>

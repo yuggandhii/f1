@@ -63,6 +63,32 @@ async def get_driver(driver_id: UUID, db: DBSession) -> dict:
     }
 
 
+@router.get("/{driver_id}/ratings")
+async def get_driver_ratings(driver_id: UUID, season: int, db: DBSession) -> dict:
+    """Return driver performance ratings for a specific season."""
+    from app.models.driver_rating import DriverRating
+    result = await db.execute(
+        select(DriverRating)
+        .where(DriverRating.driver_id == driver_id, DriverRating.season == season)
+    )
+    rating = result.scalars().first()
+    if rating is None:
+        raise HTTPException(status_code=404, detail="Driver rating not found for this season")
+    return {
+        "driver_id": str(rating.driver_id),
+        "season": rating.season,
+        "base_pace": rating.base_pace,
+        "consistency": rating.consistency,
+        "wet_skill": rating.wet_skill,
+        "tyre_management": rating.tyre_management,
+        "overtake_skill": rating.overtake_skill,
+        "qualifying_pace": rating.qualifying_edge,
+        "mechanical_dnf_rate": rating.mechanical_dnf_rate or rating.dnf_rate,
+        "driver_dnf_rate": rating.driver_dnf_rate,
+        "teammate_index": rating.teammate_index,
+    }
+
+
 @router.get("/{driver_id}/history")
 async def get_driver_history(driver_id: UUID, db: DBSession) -> list[dict]:
     """Return historical race results for a driver."""

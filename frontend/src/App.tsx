@@ -1,36 +1,30 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { SeasonProvider } from './contexts/SeasonContext'
+import AppLayout from './layouts/AppLayout'
 import Landing from './pages/Landing'
-
-function Placeholder({ title }: { title: string }) {
-  return (
-    <div
-      className="min-h-screen flex items-center justify-center"
-      style={{ background: '#000', color: '#fff', fontFamily: 'Rubik, sans-serif' }}
-    >
-      <div className="text-center">
-        <div
-          className="text-xs font-semibold uppercase tracking-widest mb-3"
-          style={{ color: '#EE3F2C' }}
-        >
-          Coming Soon
-        </div>
-        <h1 className="text-4xl font-black uppercase" style={{ letterSpacing: '-0.04em' }}>
-          {title}
-        </h1>
-      </div>
-    </div>
-  )
-}
+import Dashboard from './pages/Dashboard'
+import Simulate from './pages/Simulate'
+import WhatIf from './pages/WhatIf'
+import RaceReplay from './pages/RaceReplay'
+import Game from './pages/Game'
+import DriverDetail from './pages/DriverDetail'
 
 export default function App() {
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<Landing />} />
-        <Route path="/dashboard" element={<Placeholder title="Dashboard" />} />
-        <Route path="/simulate" element={<Placeholder title="Simulation" />} />
-        <Route path="/what-if" element={<Placeholder title="What-If Scenarios" />} />
-      </Routes>
-    </BrowserRouter>
+    <SeasonProvider>
+      <BrowserRouter>
+        <Routes>
+          <Route path="/" element={<Landing />} />
+          <Route element={<AppLayout />}>
+            <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/simulate" element={<Simulate />} />
+            <Route path="/what-if" element={<WhatIf />} />
+            <Route path="/race-replay" element={<RaceReplay />} />
+            <Route path="/game" element={<Game />} />
+            <Route path="/drivers/:id" element={<DriverDetail />} />
+          </Route>
+        </Routes>
+      </BrowserRouter>
+    </SeasonProvider>
   )
 }
