@@ -1,4 +1,4 @@
-# PITWALL/SIM — F1 Championship Monte Carlo Simulator
+# PITWALL/SIM — F1 Championship Monte Carlo Simulato
 
 > Predict the championship. Rewrite history. Run 10,000 seasons in under 2 seconds.
 
