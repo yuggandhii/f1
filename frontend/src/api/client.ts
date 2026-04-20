@@ -26,6 +26,7 @@ export interface DriverResult {
   points_std: number
   podium_rate: number
   dnf_rate_simulated: number
+  wcc_probability?: number
 }
 
 export interface Driver {

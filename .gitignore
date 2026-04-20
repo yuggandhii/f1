@@ -2,6 +2,15 @@ data/
 __pycache__/
 *.pyc
 *.pyo
-__pycache__/
-*.pyc
-*.pyo
+node_modules/
+frontend/dist/
+
+# Large / private files — keep local, don't push
+PRD.md
+CLAUDE.md
+BUGS.md
+graphify-out/
+.obsidian/
+frontend/public/f1-hero.mp4
+.code-review-graph/
+.gemini/

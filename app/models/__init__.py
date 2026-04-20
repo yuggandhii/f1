@@ -2,6 +2,7 @@
 from app.models.circuit import Circuit
 from app.models.driver import Driver
 from app.models.driver_rating import DriverRating
+from app.models.game_pick import GamePick
 from app.models.race_result import RaceResult
 from app.models.race_weather_forecast import RaceWeatherForecast
 from app.models.simulation_run import SimulationResult, SimulationRun
@@ -11,6 +12,7 @@ __all__ = [
     "Circuit",
     "Driver",
     "DriverRating",
+    "GamePick",
     "RaceResult",
     "RaceWeatherForecast",
     "SimulationResult",

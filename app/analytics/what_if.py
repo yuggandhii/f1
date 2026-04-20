@@ -195,17 +195,41 @@ def apply_scenario(
     mod_circuits = list(circuits)
     starting_points: dict[str, float] | None = None
 
-    # ── DRIVER_SWAP ───────────────────────────────────────────────────────────
+    # ── DRIVER_SWAP ───────────────────────────────────────────────────────────    # ✨ DRIVER_SWAP ✨
     if t == "DRIVER_SWAP":
         driver_id = scenario["driver_id"]
         to_team = scenario["to_team"].lower()
         new_car_perf = (team_car_perf or {}).get(to_team, 0.5)
-        mod_ratings = [
-            replace(r, car_performance=new_car_perf)
-            if _match_driver(r.driver_id, driver_id)
-            else r
-            for r in mod_ratings
-        ]
+
+        # Find the source driver's original team and car performance
+        from_team = None
+        source_car_perf = 0.5
+        for r_id, t_name in list(driver_teams.items()):
+            if _match_driver(r_id, driver_id):
+                from_team = t_name
+                break
+        if from_team:
+            source_car_perf = team_car_perf.get(from_team, 0.5)
+
+        # Evaluate the best driver in the destination team to swap out
+        best_dest_driver = None
+        best_rating = -1.0
+        for r in mod_ratings:
+            d_id = r.driver_id.lower().replace(" ", "_")
+            if driver_teams.get(d_id) == to_team and not _match_driver(d_id, driver_id):
+                # higher total base pace and consistency + qualifying edge = better driver
+                rating = r.base_pace + r.consistency + r.qualifying_edge
+                if rating > best_rating:
+                    best_rating = rating
+                    best_dest_driver = r.driver_id
+
+        for i, r in enumerate(mod_ratings):
+            if _match_driver(r.driver_id, driver_id):
+                # Source driver gets destination car
+                mod_ratings[i] = replace(r, car_performance=new_car_perf)
+            elif best_dest_driver and _match_driver(r.driver_id, best_dest_driver):
+                # The swapped-out team leader gets the source driver's original car
+                mod_ratings[i] = replace(r, car_performance=source_car_perf)
 
     # ── RELIABILITY_FIX ───────────────────────────────────────────────────────
     elif t == "RELIABILITY_FIX":

@@ -92,6 +92,7 @@ def create_app() -> FastAPI:
     from app.api.scenarios import router as scenarios_router
     from app.api.analytics import router as analytics_router
     from app.api.ws import router as ws_router
+    from app.api.game import router as game_router
 
     PREFIX = "/api/v1"
     application.include_router(drivers_router, prefix=PREFIX)
@@ -100,6 +101,7 @@ def create_app() -> FastAPI:
     application.include_router(scenarios_router, prefix=PREFIX)
     application.include_router(analytics_router, prefix=PREFIX)
     application.include_router(ws_router, prefix=PREFIX)
+    application.include_router(game_router, prefix=PREFIX)
 
     # ── Health check ─────────────────────────────────────────────────────
     @application.get("/health", tags=["meta"])

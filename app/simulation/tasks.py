@@ -398,13 +398,18 @@ def _partial_season_stats(session, season: int, cutoff_round: int, active_driver
     from app.models.race_result import RaceResult
     from app.models.driver import Driver as DriverModel
 
+    filters = [
+        RaceResult.season == season,
+        RaceResult.round < cutoff_round,
+    ]
+    if season == 2026:
+        # Strictly isolate last 2 races for 2026 form evaluation
+        filters.append(RaceResult.round >= cutoff_round - 2)
+
     rows = (
         session.query(RaceResult, DriverModel)
         .join(DriverModel, DriverModel.id == RaceResult.driver_id)
-        .filter(
-            RaceResult.season == season,
-            RaceResult.round < cutoff_round,
-        )
+        .filter(*filters)
         .all()
     )
 
@@ -586,8 +591,13 @@ def _load_ratings_range(season: int, range_start: int, range_end: int, cutoff_ro
                 if ps and ps["n_races"] >= 1:
                     partial_w = min(ps["n_races"], 5) / 5.0
                     blend = total_w + partial_w
-                    avg["base_pace"] = (avg["base_pace"] * total_w + ps["base_pace"] * partial_w) / blend
-                    avg["dnf_rate"]  = (avg["dnf_rate"]  * total_w + ps["dnf_rate"]  * partial_w) / blend
+                    
+                    if season == 2026:
+                        avg["base_pace"] = ps["base_pace"]
+                        avg["dnf_rate"]  = ps["dnf_rate"]
+                    else:
+                        avg["base_pace"] = (avg["base_pace"] * total_w + ps["base_pace"] * partial_w) / blend
+                        avg["dnf_rate"]  = (avg["dnf_rate"]  * total_w + ps["dnf_rate"]  * partial_w) / blend
 
                 result.append(DriverRating(
                     driver_id=did,
